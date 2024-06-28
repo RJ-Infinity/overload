@@ -18,6 +18,10 @@ classifiers = [
 	"Operating System :: OS Independent",
 ]
 
+dependencies = [
+	"rj-type-hint-checker"
+]
+
 [project.urls]
 Homepage = "https://github.com/RJ-Infinity/overload"
 Documentation = "https://github.com/RJ-Infinity/overload"
