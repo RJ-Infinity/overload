@@ -4,6 +4,7 @@ import inspect
 from inspect import Parameter
 from type_hint_checker import are_type_compatible
 import functools
+from types import MethodType
 
 class OverloadSelectionError(Exception):
 	"""TODO ALL DOCS"""
@@ -19,11 +20,16 @@ class _FnSig:
 
 class overload:
 	def __new__(cls, fn):
-		pre_existing = inspect.currentframe().f_back.f_locals.get(fn.__name__)
+		last_frame = inspect.currentframe().f_back
+		pre_existing = last_frame.f_locals.get(fn.__name__)
+		ns = last_frame.f_globals | last_frame.f_locals
 		if isinstance(pre_existing, overload):
 			pre_existing.add_overload(fn)
+			pre_existing._ns |= ns
 			return pre_existing
-		return object.__new__(cls)
+		rv = object.__new__(cls)
+		rv._ns = ns
+		return rv
 	def __init__(self, fn):
 		if hasattr(self, "_functions"):return
 		self._functions = [_FnSig(fn)]
@@ -76,7 +82,12 @@ class overload:
 				Parameter.POSITIONAL_OR_KEYWORD,
 				Parameter.VAR_POSITIONAL
 			]:return False
-			if typed and not are_type_compatible(arg, param.annotation, fn.fn): return False
+			if typed and not are_type_compatible(
+				arg,
+				param.annotation,
+				fn.fn,
+				self._ns
+			): return False
 			# ignore extra positional args
 			if param.kind == Parameter.VAR_POSITIONAL: var_pos = True
 			param_i += 1
@@ -109,7 +120,8 @@ class overload:
 				if typed and not are_type_compatible(
 					kwargs[name],
 					param.annotation,
-					fn.fn
+					fn.fn,
+					self._ns
 				): return False
 				checked_kwargs += 1
 			elif param.default == Parameter.empty: return False
@@ -118,14 +130,19 @@ class overload:
 
 	def choose(self, args: list, kwargs: dict):
 		fns = self._functions
+		if len(fns) == 1:return fns[0]
 		fns = [fn for fn in fns if self.check_args(fn, args, kwargs, False)]
 		if len(fns) == 1:return fns[0]
 		# if there are still multiple fns check types to whittle it down more
 		fns = [fn for fn in fns if self.check_args(fn, args, kwargs, True)]
 		if len(fns) == 1:return fns[0]
-		# if there are still multiple fns it means it is amibgous so fail
+		# if there are still multiple (or none) fns it means it is amibgous so fail
 		raise OverloadSelectionError("TODO")
-	def __call__(self, *args, **kwargs):self.choose(args, kwargs).fn(*args, **kwargs)
+	def __get__(self, instance, owner):
+		return self if instance is None else MethodType(self, instance)
+	def __call__(self, *args, **kwargs):
+		print("over", args)
+		self.choose(args, kwargs).fn(*args, **kwargs)
 
 
 if __name__ == "__main__":
